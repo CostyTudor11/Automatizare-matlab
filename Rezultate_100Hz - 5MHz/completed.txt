@@ -1,0 +1,3 @@
+Mode: USB
+Points: 471
+Elapsed_s: 400.234
