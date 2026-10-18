@@ -1,139 +1,359 @@
-# SwEA — automatizare MATLAB pentru TL082
+# SwEA — Caracterizarea automată a unui amplificator cu TL082
 
-Deschide folderul in MATLAB, deschide **SwEA.m** si apasa Run.
-Implicit ruleaza `mod_lucru = "demo"`: fara aparate, cu date sintetice marcate
-explicit. Modelul demonstrativ are castig 2 si un pol la 1.5 MHz; aceasta
-valoare este aleasa pentru testarea algoritmului, nu reprezinta o masurare
-sau o predictie validata pentru TL082.
+Proiect MATLAB pentru măsurarea automată a răspunsului în frecvență al unui amplificator neinversor cu TL082.
 
-## Ce modifici
+MATLAB controlează prin USB un generator de semnal și un osciloscop, măsoară intrarea și ieșirea circuitului și generează graficul Bode: câștig și fază în funcție de frecvență.
 
-La inceputul `SwEA.m`: `Vin_Vpp`, `f_min`, `f_max`, `puncte_pe_decada`,
-rezistentele si factorii sondelor. Setarile initiale sunt 500 mVpp, 1 Hz–5 MHz,
-100 intervale logaritmice pe decada, Rf = Rg = 10 kohm si sonde x1.
-Grila include exact capetele intervalului si contine 671 de frecvente.
+**Rezultatul principal:** baleiaj real între **1 Hz și 5 MHz**, cu **671 de puncte** și o frecvență de tăiere calculată de **2,3224 MHz**.
 
-Formulele de castig, faza si prag de taiere sunt declarate cu `syms`.
-`matlabFunction` le transforma o singura data in functii numerice. Valorile
-trimise aparatelor si calculele din bucla sunt numerice. Astfel, scrierea
-ramane simbolica unde este utila, fara substitutii simbolice la fiecare punct.
+> Proiectul caracterizează montajul real în buclă închisă, cu sondele conectate. Nu măsoară direct câștigul în buclă deschisă sau GBW-ul intern al TL082.
 
-`semnal` este expus, dar aceasta versiune accepta numai `"SINE"`.
-Un raport RMS pentru semnal patrat nu este raspunsul Bode la fundamentala;
-selectarea altei forme produce o eroare explicita.
+## Ce face automatizarea
 
-## Fisiere rezultate
+1. Identifică generatorul și osciloscopul.
+2. Configurează semnalul sinusoidal și canalele de măsurare.
+3. Parcurge frecvențele distribuite logaritmic.
+4. Adaptează baza de timp și scalele verticale.
+5. Așteaptă stabilizarea și execută o achiziție SINGLE.
+6. Citește măsurătorile și calculează câștigul și faza.
+7. Salvează progresiv datele în CSV.
+8. Încearcă oprirea generatorului la final sau la întrerupere.
+9. Calculează frecvența de tăiere și salvează graficul final.
 
-Fiecare rulare creeaza un folder distinct in `rezultate_SwEA`:
+Nu se salvează câte o captură a osciloscopului la fiecare frecvență. Graficul final este construit în MATLAB.
 
-- `measurements.csv`: frecvente, amplitudini brute si RMS AC, castig,
-  intarziere, faza, setari de achizitie si starea fiecarui punct. Se salveaza
-  dupa fiecare punct, inclusiv cand masurarea este marcata invalida.
-- `cutoff.csv`: **doar `Cutoff_Hz` si `Status`**. Fara Av0, GBW sau frecventa 0 dB.
-- `bode.png`: un singur grafic final, frecventa logaritmica, castig in dB
-  pe axa stanga si faza in grade pe axa dreapta.
-- `bode.fig`, fisiere MAT/JSON si jurnalul comenzilor: pentru redeschidere
-  si diagnostic. Nu se salveaza capturi PNG la fiecare frecventa.
+## Echipamente și montaj
 
-La eroare, CSV-ul cu punctele deja masurate ramane salvat, impreuna cu
-rezultatele partiale si mesajul erorii. Graficul final se creeaza numai dupa
-terminarea baleiajului. Generatorul este oprit la final sau la iesirea cu eroare.
+| Element | Configurație |
+|---|---|
+| Amplificator operațional | TL082 |
+| Montaj | Neinversor, realizat pe breadboard |
+| Alimentare | ±10 V |
+| Rezistență de reacție Rf | 10 kΩ |
+| Rezistență către masă Rg | 10 kΩ |
+| Câștig nominal | 1 + Rf/Rg = 2 V/V ≈ 6,02 dB |
+| Generator | SIGLENT SDG1032X |
+| Osciloscop | SIGLENT SDS824X HD |
+| Semnal | Sinus, 500 mVpp setați pe generator, offset zero |
+| Sonde | ×1 pe ambele canale |
+| Cuplaj osciloscop | DC |
+| Sarcină externă | Sonda osciloscopului |
 
-## Metoda
+Rețeaua de reacție încarcă și ea ieșirea amplificatorului.
 
-1. Calculatorul identifica generatorul SDG1032X si osciloscopul SDS824X HD
-   prin VISA USB si verifica identitatea lor. Generatorul este configurat
-   sinus, offset zero, amplitudine Vpp si afisare pentru sarcina High-Z.
-2. CH1 masoara intrarea, CH2 iesirea; cuplaj DC, fara inversare, fara limitare
-   de banda. Pragurile masurarilor sunt 90/50/10%. Trigger: CH1, front crescator.
-3. La fiecare frecventa, timpul de stabilizare si baza de timp depind de
-   perioada. Se solicita o achizitie SINGLE noua si se asteapta oprirea ei.
-   Sunt verificate durata capturii si densitatea esantioanelor. Scalele se
-   adapteaza numai cand este necesar; se permit maximum trei incercari.
-4. Se citesc Vpp, RMS pe un ciclu, media acelui ciclu, frecventa CH1 si
-   intarzierea fronturilor crescatoare CH1→CH2 (FRFR in interfata, `FRR` SCPI).
-   `V_AC = sqrt(V_CRMS^2 - V_CMean^2)`, `G = Vout_AC/Vin_AC`.
-   Amplitudinea reala de intrare este masurata; nu se presupune egala cu
-   setarea generatorului si nu se foloseste o bucla de reglare a acesteia.
-5. Faza este `-360*f_masurata*intarziere`, adusa in intervalul [-180,180).
-   Frontul de iesire urmator poate introduce o perioada intreaga, eliminata
-   prin aceasta normalizare. Metoda este destinata sinusurilor curate.
-6. Referinta pentru taiere este mediana castigului masurat intre 10 si
-   1000 Hz, nu valoarea teoretica 6.02 dB. Banda este modificabila prin
-   `cfg.plateauBandHz`. Se cer minimum 10 puncte, minimum 80% puncte valide,
-   aproximativ o decada acoperita si abatere maxima 0.25 dB de la mediana.
-7. Pragul este referinta minus `10*log10(2)` (aproximativ 3.0103 dB).
-   Interpolarea se face intre puncte vecine valide, in dB fata de log10(f).
-   Lipsa platoului, lipsa intersectiei, date invalide langa intersectie sau
-   intersectii multiple produc `NaN` si un motiv explicit, fara extrapolare.
+### Conexiuni
 
-Frecventa de taiere este a **montajului in bucla inchisa**, inclusiv efectele
-sondei si breadboardului. Nu este caracteristica in bucla deschisa din datasheet.
-Verificarea Vpp/RMS poate semnala deformare/zgomot, dar nu este o masurare THD.
-Punctele suspecte sunt pastrate brut, cu castig/faza invalidata unde este cazul.
-Nu se aplica netezire care sa ascunda masuratorile problematice.
+| De la | Către |
+|---|---|
+| Generator CH1 | Intrarea neinversoare |
+| Osciloscop CH1 | Intrarea amplificatorului |
+| Osciloscop CH2 | Ieșirea amplificatorului |
+| Rf | Între ieșire și intrarea inversoare |
+| Rg | Între intrarea inversoare și masa circuitului |
+| Masele generatorului și sondelor | Masa comună de 0 V |
+| USB Device generator | Laptop |
+| USB Device osciloscop | Laptop |
 
-## Cand ai bancul pregatit
+**Masele sondelor se conectează la 0 V, nu la −10 V.**
 
-Ai nevoie de MATLAB, **Symbolic Math Toolbox** pentru `syms`, Instrument
-Control Toolbox pentru USB si o implementare VISA compatibila instalata
-(de exemplu NI-VISA). Un simplu cablu USB nu inlocuieste driverul VISA.
+Verifică pinout-ul capsulei, polaritățile și decuplarea alimentării înainte de pornire. Factorii configurați în MATLAB trebuie să corespundă comutatoarelor fizice ale sondelor.
 
-Conecteaza separat fiecare aparat la calculator prin portul USB Device.
-Generator CH1 → intrarea neinversoare; osciloscop CH1 → aceeasi intrare;
-osciloscop CH2 → iesire. Rf = 10 kohm intre iesire si intrarea inversoare,
-Rg = 10 kohm intre intrarea inversoare si masa. Alimentarea ±10 V se seteaza
-manual; scriptul nu controleaza sursa. Leaga masele generatorului si sondelor
-la masa comuna de 0 V, nu la alimentarea -10 V. Foloseste decuplare locala
-a alimentarilor si conexiuni scurte.
+Sursa de alimentare este configurată manual; scriptul nu o controlează.
 
-Factorii `sonde` trebuie sa corespunda comutatoarelor fizice. Banda si
-capacitatea sondelor in x1, precum si parazitii breadboardului, trebuie
-verificate inainte de a interpreta rezultatele pana la 5 MHz. Codul nu
-poate compensa automat aceste efecte. Un test cu ambele sonde pe acelasi
-sinus trebuie sa dea aproximativ 0 dB si 0 grade; un circuit RC cunoscut
-permite verificarea semnului fazei. Aceste verificari nu sunt simulate de cod.
+## Cerințe software
 
-Ruleaza `visadevlist` pentru a verifica detectia. Daca sunt mai multe aparate
-identice sau identificarea automata nu reuseste, copiaza `ResourceName` in
-`cfg.generatorResource` / `cfg.scopeResource` din SwEA.m.
-Schimba `mod_lucru` in `"usb"` pentru masurarea reala.
-Pentru prima verificare rapida poti adauga inainte de `run_swea`:
+Proiectul a fost rulat pe Windows 11, în MATLAB R2026b.
+
+Sunt necesare:
+
+- MATLAB;
+- Instrument Control Toolbox;
+- Symbolic Math Toolbox pentru `SwEA.m`;
+- o implementare VISA compatibilă.
+
+În acest proiect s-a folosit NI-VISA. Detectarea aparatelor a fost verificată în NI MAX și apoi în MATLAB.
+
+Componentele „VISA Shared Components” nu confirmă singure existența unei implementări VISA funcționale.
+
+Firmware-urile raportate de aparatele utilizate:
+
+| Aparat | Firmware |
+|---|---|
+| SDG1032X | `1.01.01.33R8` |
+| SDS824X HD | `4.8.12.1.1.6.5` |
+
+Compatibilitatea cu alte modele sau firmware-uri necesită verificarea comenzilor SCPI.
+
+## Organizarea codului
+
+Păstrează toate fișierele MATLAB în același folder.
+
+| Fișier | Rol |
+|---|---|
+| `SwEA.m` | Script principal: parametri, formule simbolice și pornirea măsurării |
+| `swea_config.m` | Setări implicite, toleranțe, timpi și model demonstrativ |
+| `run_swea.m` | Comunicație USB, achiziție, salvare și generarea graficului |
+| `swea_frequencies.m` | Construirea grilei de frecvențe |
+| `swea_reduce.m` | Calculul câștigului/fazei și verificarea datelor |
+| `swea_cutoff.m` | Determinarea frecvenței de tăiere |
+| `swea_numeric_formulas.m` | Formule numerice pentru apeluri directe și teste |
+| `test_swea.m` | Teste fără aparate |
+
+## 1. Verificarea fără aparate
+
+Deschide folderul proiectului în MATLAB și rulează:
 
 ```matlab
-cfg.frequencyOverride = [10 1000 100000];
+test_swea
 ```
 
-Acest test scurt nu determina taierea. Sterge linia pentru baleiajul complet.
-Pentru alt opamp pastreaza metoda daca montajul ramane neinversor si raspunsul
-are un platou urmat de o taiere superioara; adapteaza amplitudinea, frecventele
-si, daca este necesar, banda de referinta si timpul de stabilizare.
+Testele verifică grila de frecvențe, calculele, tratarea unor date invalide și generarea fișierelor.
 
-## Verificari si limite de validare
+**Aceste teste nu validează aparatele USB.** Rezultatele temporare ale testului sunt șterse automat la ieșire.
 
-`test_swea` verifica in MATLAB grila, eliminarea offsetului DC, faza,
-interpolarea taierii, cazurile invalide si fisierele produse in modul DEMO.
-Nu necesita aparate si foloseste formulele numerice echivalente.
+Pentru o demonstrație cu rezultate păstrate, setează în `SwEA.m`:
 
-Livrarea a fost verificata cu analizorul static MATLAB MISS_HIT si prin
-verificari numerice independente. MATLAB si aparatele nu au fost disponibile
-in mediul de lucru: executia efectiva a scriptului si a `test_swea`, raspunsurile
-SCPI, sincronizarea achizitiei si precizia pe banc raman de validat.
-Nu este prezentata ca o automatizare deja testata pe hardware.
+```matlab
+mod_lucru = "demo";
+```
 
-## Documentatie folosita
+Apoi apasă Run.
 
-- SIGLENT [SDS Series Programming Guide](https://siglentna.com/download/42429/),
-  EN11G: model/firmware p.18; achizitie pp.36–47; canale pp.50–58;
-  masurari pp.336–347; praguri pp.369–372; trigger pp.482–495.
-  Profilul implementat cere firmware SDS800X HD minimum 1.1.3.1.
-- SIGLENT [SDS800X HD User Manual](https://siglentna.com/download/42435/),
-  definitiile masurarilor pe ciclu si intarzierii FRFR, pp.120–125.
-- SIGLENT [SDG Series Programming Guide](https://siglentna.com/download/16164/):
-  OUTP, BSWV, MDWV, SWWV si BTWV.
-- MathWorks: [syms](https://www.mathworks.com/help/symbolic/syms.html),
-  [matlabFunction](https://www.mathworks.com/help/symbolic/sym.matlabfunction.html),
-  [visadev](https://www.mathworks.com/help/instrument/visadev.html).
+Modelul demonstrativ are câștigul 2 și un pol la 1,5 MHz. Acestea sunt date sintetice, nu măsurători ale circuitului.
 
-Lucrarea mentionata anterior nu a fost disponibila in fisierele accesibile
-acestei livrari; nu pretind ca acest cod a fost verificat fata de ea.
+Folderele DEMO au prefixul `DEMO_SYNTHETIC`, iar stările măsurătorilor au prefixul `SYNTHETIC_`.
+
+## 2. Verificarea conexiunilor USB
+
+Pornește aparatele și conectează fiecare port USB Device la laptop.
+
+Verifică detectarea în NI MAX, apoi rulează în MATLAB:
+
+```matlab
+devices = visadevlist;
+disp(devices)
+```
+
+Trebuie să apară SDG1032X și SDS824X HD.
+
+În `SwEA.m`, șirurile goale permit identificarea automată după model:
+
+```matlab
+cfg.generatorResource = "";
+cfg.scopeResource = "";
+```
+
+Dacă există mai multe aparate cu același model, completează explicit adresele `ResourceName` returnate de `visadevlist`.
+
+Nu copia adrese USB de la un alt banc: acestea includ identificatori specifici instrumentelor.
+
+## 3. Prima probă pe montaj
+
+Verifică manual montajul cu un sinus de 1 kHz:
+
+- aproximativ 500 mVpp măsurați la intrare;
+- aproximativ 1 Vpp la ieșire;
+- fără deformare evidentă.
+
+Pentru o probă automată scurtă, rulează în Command Window:
+
+```matlab
+cfg = swea_config();
+
+cfg.mode = "usb";
+cfg.vinVpp = 0.500;
+cfg.offsetV = 0;
+cfg.probe = [1 1];
+
+cfg.fStart = 100;
+cfg.fStop = 10000;
+cfg.frequencyOverride = [100 1000 10000];
+
+[rezultate, folder_rezultate] = run_swea(cfg);
+
+disp(rezultate(:, {'FrequencySet_Hz','Vin_Vpp','Vout_Vpp', ...
+    'Gain_dB','Phase_deg','Status'}))
+```
+
+Comanda pornește efectiv ieșirea generatorului.
+
+Cu numai trei puncte, mesajul `INSUFFICIENT_PLATEAU_DATA` pentru frecvența de tăiere este explicabil și nu reprezintă o eroare de comunicație.
+
+Verifică oprirea CH1 la final.
+
+## 4. Baleiajul complet din SwEA.m
+
+Setează:
+
+```matlab
+mod_lucru = "usb";
+Vin_Vpp = 0.500;
+
+f_min = 1;
+f_max = 5e6;
+puncte_pe_decada = 100;
+
+semnal = "SINE";
+R_feedback = 10e3;
+R_masa = 10e3;
+sonde = [1 1];
+```
+
+După `cfg = swea_config();`, păstrează:
+
+```matlab
+cfg.frequencyOverride = [];
+```
+
+Salvează și apasă **Run în SwEA.m**.
+
+Setările introduse anterior în Command Window nu înlocuiesc parametrii reconstruiți de `SwEA.m`.
+
+La frecvențe joase măsurarea este lentă: la 1 Hz, cinci perioade ocupă cinci secunde, la care se adaugă stabilizarea și comunicația. Nu modifica setările aparatelor în timpul rulării.
+
+La final, verifică dacă generatorul este OFF. Dacă întrerupi măsurarea și ieșirea rămâne activă, oprește-o manual.
+
+Punctele deja scrise în CSV se păstrează. Fișierele finale nu sunt garantate după întrerupere, iar programul nu implementează reluarea automată a unei rulări incomplete.
+
+## Metoda de calcul
+
+Componenta alternativă RMS este estimată separat pentru fiecare canal:
+
+```text
+V_AC_RMS = sqrt(V_CRMS^2 - V_CMean^2)
+```
+
+Câștigul este:
+
+```text
+G = Vout_AC_RMS / Vin_AC_RMS
+G_dB = 20 * log10(G)
+```
+
+Se folosește intrarea efectiv măsurată, nu valoarea nominală de 500 mVpp.
+
+Vpp este salvat pentru verificări. Programul nu ajustează repetat generatorul pentru a menține exact 500 mVpp la intrarea circuitului.
+
+Faza este definită ca:
+
+```text
+faza = faza_iesire - faza_intrare
+```
+
+Codul folosește întârzierea dintre fronturile crescătoare și relația:
+
+```text
+faza_grade = -360 * frecventa * intarziere
+```
+
+Normalizarea fazei este realizată în funcția de prelucrare. Semnul returnat de lanțul de măsurare necesită o verificare experimentală cu o întârziere cunoscută.
+
+### Frecvența de tăiere
+
+Pragul este cu **3,0103 dB sub platoul măsurat**, nu sub maximul curbei.
+
+Banda de referință configurată este 10–1000 Hz. La un baleiaj început la 100 Hz sunt disponibile numai punctele din 100–1000 Hz.
+
+Trecerea pragului este interpolată în dB față de logaritmul frecvenței. Dacă datele nu permit determinarea tăierii, se salvează `NaN` și o stare explicativă.
+
+## Fișiere generate
+
+Rezultatele sunt salvate într-un subfolder unic din `rezultate_SwEA`, lângă `SwEA.m`.
+
+| Fișier | Conținut |
+|---|---|
+| `measurements.csv` | Datele fiecărei frecvențe și stările verificărilor |
+| `cutoff.csv` | Frecvența de tăiere și starea calculului |
+| `bode.png` | Grafic final: amplitudine roșie, fază albastră |
+| `bode.fig` | Figura editabilă în MATLAB |
+| `config.json`, `config.mat` | Configurația rulării |
+| `results.mat` | Tabelul rezultatelor și configurația |
+| `instrument_log.txt` | Comenzile și răspunsurile instrumentelor |
+| `completed.txt` | Modul, numărul de puncte și durata |
+| `partial_results.mat`, `FAILED.txt` | Date parțiale și eroarea, dacă excepția este capturată |
+
+Citirea CSV-urilor cu separator explicit:
+
+```matlab
+folder = 'calea folderului cu rezultate';
+
+t = readtable(fullfile(folder,'measurements.csv'),'Delimiter',',');
+c = readtable(fullfile(folder,'cutoff.csv'),'Delimiter',',');
+
+disp(c)
+
+suspect = string(t.Status) ~= "OK";
+disp(t(suspect, {'FrequencySet_Hz','Gain_dB','Phase_deg','Status'}))
+```
+
+### Stări importante
+
+| Stare | Semnificație |
+|---|---|
+| `OK` | Punctul a trecut verificările software |
+| `SYNTHETIC_OK` | Date demonstrative |
+| `INPUT_NOT_AT_TARGET` | Intrarea se abate de la amplitudinea țintă |
+| `CHECK_WAVEFORM_OR_NOISE` | Verificarea Vpp/RMS nu a trecut |
+| `FREQUENCY_MISMATCH` | Frecvența măsurată diferă peste toleranță |
+| `SCREEN_RANGE_SUSPECT` | Încadrare verticală suspectă |
+| `OK_WITH_INVALID_POINTS_ELSEWHERE` | Tăiere calculată, dar există puncte invalide în alte zone |
+
+Stările se pot combina. `INPUT_NOT_AT_TARGET` nu invalidează automat raportul tensiunilor măsurate.
+
+Valorile `NaN` apar ca întreruperi în grafic. Nu sunt înlocuite cu valori inventate.
+
+## Rezultatul principal — 1 Hz–5 MHz
+
+Măsurare efectuată la **18 octombrie 2026**.
+
+| Parametru | Rezultat |
+|---|---|
+| Număr de puncte | 671 |
+| Câștig în bandă | Aproximativ 5,95–5,98 dB |
+| Frecvență de tăiere | **2,3224 MHz** |
+| Stare tăiere | `OK_WITH_INVALID_POINTS_ELSEWHERE` |
+| Maxim observat | Aproximativ 8,05 dB în zona 1,26–1,29 MHz |
+| Punct invalid | Aproximativ 3,7154 MHz |
+| Stare punct invalid | `INPUT_NOT_AT_TARGET|CHECK_WAVEFORM_OR_NOISE` |
+
+Curba prezintă un maxim înainte de cădere. Cauza nu a fost izolată experimental; maximul nu dovedește singur existența unei oscilații.
+
+### Rulări suplimentare
+
+| Rulare | Interval | Frecvență de tăiere |
+|---|---|---|
+| Prima | 100 Hz–5 MHz | 2,543 MHz |
+| Principală | 1 Hz–5 MHz | 2,3224 MHz |
+| Repetare | 100 Hz–5 MHz | 2,4271 MHz |
+
+Cele două rulări cu același interval diferă cu aproximativ 4,6%, raportat la prima. Cauza variației nu a fost stabilită.
+
+Rulările suplimentare sunt păstrate pentru comparație. Valorile lor nu sunt amestecate cu rezultatul principal.
+
+## Limitele proiectului
+
+- Rezultatul include efectele montajului pe breadboard, ale cablurilor și sondelor.
+- Modelul și banda sondelor în ×1 nu au fost documentate.
+- Nu a fost demonstrată o calibrare completă între canale sau validarea experimentală a semnului fazei.
+- Nu a fost realizat un buget formal de incertitudine.
+- Starea `OK` confirmă numai verificările implementate, nu precizia absolută.
+- Modelul DEMO cu un singur pol nu este un model complet al TL082 și al montajului.
+- La frecvențe mari au apărut avertizări de amplitudine și puncte invalidate.
+
+## Depanare
+
+**Aparatele nu apar în MATLAB:** verifică porturile USB Device, cablurile, instalarea VISA și detectarea în NI MAX.
+
+**Apare eroarea `onCleanup` despre variabila `gen`:** folosește versiunea corectată `run_swea.m`, care transmite obiectele explicit funcțiilor de oprire.
+
+**Apar avertizări de rotunjire a timeout-ului:** valoarea poate fi rotunjită în sus cu `ceil`. Aceasta nu accelerează achiziția.
+
+**Graficul are întreruperi:** verifică stările și valorile `NaN` din `measurements.csv`.
+
+**CSV-ul este împărțit în coloane greșite:** folosește explicit `'Delimiter',','` la `readtable`.
+
+## Publicarea pe GitHub
+
+Păstrează separat rezultatele DEMO și USB. Pentru rezultatul principal, publică împreună graficul, CSV-urile și configurația aceleiași rulări.
+
+Verifică înainte de publicare căile locale și seriile aparatelor din configurații și jurnale. Aceste informații pot identifica mediul de lucru.
