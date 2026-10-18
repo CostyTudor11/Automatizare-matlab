@@ -1,0 +1,43 @@
+{
+  "mode": "usb",
+  "dut": "TL082_gain2",
+  "fStart": 1,
+  "fStop": 5.0E+6,
+  "pointsPerDecade": 100,
+  "frequencyOverride": [],
+  "waveform": "SINE",
+  "vinVpp": 0.5,
+  "offsetV": 0,
+  "expectedGain": 2,
+  "supplyV": [
+    -10,
+    10
+  ],
+  "probe": [
+    1,
+    1
+  ],
+  "generatorResource": "",
+  "scopeResource": "",
+  "outputRoot": "C:\\Users\\marius.tudor\\OneDrive - Universitatea Politehnica Timisoara\\FACULTATE\\Anul 4 2026-2027\\Semestrul 1\\3 SwEA\\Proiect nota C\\SwEA_MATLAB\\rezultate_SwEA",
+  "cyclesOnScreen": 5,
+  "horizontalDivisions": 10,
+  "settleCycles": 2,
+  "minSettleS": 0.1,
+  "extraSettleS": 0,
+  "minTimeoutS": 10,
+  "maxAttempts": 3,
+  "minSamplesPerCycle": 50,
+  "inputTolerance": 0.05,
+  "frequencyTolerance": 0.005,
+  "sineRatioTolerance": 0.1,
+  "cutoffDropDB": 3.0102999566398121,
+  "plateauBandHz": [
+    10,
+    1000
+  ],
+  "plateauToleranceDB": 0.25,
+  "maxCutoffGapDecades": 0.03,
+  "demoGain": 2,
+  "demoPoleHz": 1.5E+6
+}
