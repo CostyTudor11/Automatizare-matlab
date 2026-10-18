@@ -1,7 +1,7 @@
 %% SwEA - parametrii pe care ii modifici
 clear; clc;
 
-mod_lucru = "demo";                % "demo" fara aparate; "usb" pentru masurare
+mod_lucru = "usb";                % "demo" fara aparate; "usb" pentru masurare
 Vin_Vpp = 0.500;                    % amplitudinea ceruta generatorului [Vpp]
 f_min = 1;                         % [Hz]
 f_max = 5e6;                       % [Hz]
@@ -28,6 +28,7 @@ calc.phaseDeg = matlabFunction(faza_grade,'Vars',[frecventa intarziere]);
 
 %% Transmiterea setarilor si pornirea automatizarii
 cfg = swea_config();
+cfg.frequencyOverride = [];
 cfg.mode = mod_lucru;
 cfg.vinVpp = Vin_Vpp;
 cfg.fStart = f_min;

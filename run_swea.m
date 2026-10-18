@@ -726,40 +726,31 @@ end
 %% Graficul Bode final
 function plotResults(t,outDir,tag,cutoff)
 
-fig = figure('Visible','off');
-
+fig = figure('Visible','off','Color','w');
 cleanupFigure = onCleanup(@()close(fig)); %#ok<NASGU>
 
 yyaxis left
-
-semilogx(t.FrequencySet_Hz,t.Gain_dB,'LineWidth',1.3);
-
+semilogx(t.FrequencySet_Hz,t.Gain_dB,'r','LineWidth',1.5);
 ylabel('Amplificare [dB]');
 grid on;
 
 yyaxis right
+semilogx(t.FrequencySet_Hz,t.Phase_deg,'b','LineWidth',1.5);
+ylabel('Faza [grade]');
 
-semilogx(t.FrequencySet_Hz,t.Phase_deg,'LineWidth',1.3);
+ax = gca;
+ax.YAxis(1).Color = 'r';
+ax.YAxis(2).Color = 'b';
 
-ylabel('Faza iesire - intrare [grade]');
 xlabel('Frecventa [Hz]');
-
-title(tag + " - raspuns in bucla inchisa", ...
-    'Interpreter','none');
-
-if startsWith(tag,"DEMO")
-    title('DEMO SINTETIC - model ilustrativ cu un pol');
-end
+title('Caracteristica de amplitudine');
 
 if isfinite(cutoff.Cutoff_Hz)
-
-    xline(cutoff.Cutoff_Hz,'--', ...
+    xline(cutoff.Cutoff_Hz,'--k', ...
         sprintf('f_{-3dB} = %.4g Hz',cutoff.Cutoff_Hz));
-
 end
 
 exportgraphics(fig,fullfile(outDir,'bode.png'),'Resolution',180);
-
 savefig(fig,fullfile(outDir,'bode.fig'));
 
 end
